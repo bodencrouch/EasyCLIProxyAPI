@@ -174,3 +174,74 @@ fn deepseek_desktop_macos_host_app_is_detected() {
     assert!(executable.is_some());
     fs::remove_dir_all(home).unwrap();
 }
+
+#[test]
+fn deepseek_desktop_linux_prefers_try_exec_and_appimage_version() {
+    let home = agent_test_home("deepseek-desktop-linux-entry");
+    let data = home.join("share");
+    let appimage = home.join("AppImages/deepseek_harness.appimage");
+    fs::create_dir_all(appimage.parent().unwrap()).unwrap();
+    fs::create_dir_all(data.join("applications")).unwrap();
+    fs::write(&appimage, []).unwrap();
+    fs::write(
+        data.join("applications/deepseek_harness.desktop"),
+        format!(
+            "[Desktop Entry]\nName=DeepSeek Harness\nTryExec={0}\nExec=\"/usr/bin/python3\" \"/x/plasma_app_actions.py\" \"run\" -- env DESKTOPINTEGRATION=1 {0} --no-sandbox %U\nStartupWMClass=DeepSeek Harness\nX-AppImage-Version=0.3.8\n\n[Desktop Action Other]\nName=DeepSeek Harness\nExec=/usr/bin/false\n",
+            path_to_string(&appimage)
+        ),
+    )
+    .unwrap();
+
+    let found = find_linux_deepseek_harness_desktop_in_roots(&home, &[], &[data.clone()], &[]);
+    assert_eq!(found, Some(appimage.clone()));
+    assert_eq!(
+        read_linux_deepseek_harness_desktop_version(&appimage, &home, &[], &[data]),
+        Some("0.3.8".to_string())
+    );
+    fs::remove_dir_all(home).unwrap();
+}
+
+#[test]
+fn deepseek_desktop_linux_scans_appimages_and_unpacked_installs() {
+    let home = agent_test_home("deepseek-desktop-linux-scan");
+    let images = home.join("AppImages");
+    fs::create_dir_all(&images).unwrap();
+    fs::write(images.join("Other-1.0.AppImage"), []).unwrap();
+    assert_eq!(find_linux_deepseek_harness_desktop_in_roots(&home, &[], &[], &[images.clone()]), None);
+
+    let appimage = images.join("DeepSeek-Harness-0.3.8-x86_64.AppImage");
+    fs::write(&appimage, []).unwrap();
+    assert_eq!(
+        find_linux_deepseek_harness_desktop_in_roots(&home, &[], &[], &[images.clone()]),
+        Some(appimage.clone())
+    );
+    assert_eq!(
+        read_linux_deepseek_harness_desktop_version(&appimage, &home, &[], &[]),
+        Some("0.3.8".to_string())
+    );
+
+    let opt = home.join("opt/DeepSeek Harness");
+    let binary = opt.join("deepseek-harness");
+    fs::create_dir_all(opt.join("resources/app")).unwrap();
+    fs::write(&binary, []).unwrap();
+    fs::write(opt.join("resources/app/package.json"), r#"{"version":"0.3.9-rc.1"}"#).unwrap();
+    assert_eq!(
+        find_linux_deepseek_harness_desktop_in_roots(&home, &[opt], &[], &[images]),
+        Some(binary.clone())
+    );
+    assert_eq!(
+        read_linux_deepseek_harness_desktop_version(&binary, &home, &[], &[]),
+        Some("0.3.9-rc.1".to_string())
+    );
+    fs::remove_dir_all(home).unwrap();
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+#[ignore = "Requires DeepSeek Harness Desktop installed on the host"]
+fn deepseek_desktop_linux_installed_host_probe() {
+    let home = PathBuf::from(env::var_os("HOME").unwrap());
+    let app = find_deepseek_harness_desktop_application(&home).expect("installed Desktop should be detected");
+    let version = read_deepseek_harness_desktop_version(&app).expect("Desktop version");
+    println!("DeepSeek Harness Desktop: {} ({version})", app.display());
+}

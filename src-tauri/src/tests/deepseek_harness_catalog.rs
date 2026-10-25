@@ -915,3 +915,38 @@ fn harness_template_and_backup_restore_reconcile_catalog_state() {
     );
     fs::remove_dir_all(home).unwrap();
 }
+
+#[test]
+fn harness_settings_keep_model_ids_with_bracketed_suffixes() {
+    let id = "Deep Research Pro Preview (Dec-12-2025) [Rerouted]";
+    let models = test_agent_models(&["gemini-2.5-pro", id, "[leading] bracket", "trailing: colon"]);
+    let existing = "# keep me\nagent-default-model:\n  provider: deepseek-official\n  model: deepseek-v4-pro\n";
+    let rendered = build_deepseek_harness_settings(
+        Some(existing),
+        "http://127.0.0.1:8317/v1",
+        "gemini-2.5-pro",
+        &models,
+    )
+    .unwrap();
+    let value: serde_norway::Value = serde_norway::from_str(&rendered).unwrap();
+    let ids = value["llm-pi-ai"]["providers"][DEEPSEEK_HARNESS_PROVIDER_ID]["models"]
+        .as_sequence()
+        .unwrap()
+        .iter()
+        .map(|model| model["id"].as_str().unwrap().to_string())
+        .collect::<Vec<_>>();
+    assert_eq!(ids, vec!["gemini-2.5-pro", id, "[leading] bracket", "trailing: colon"]);
+    assert!(rendered.contains("# keep me"));
+
+    let again = build_deepseek_harness_settings(Some(&rendered), "http://127.0.0.1:8317/v1", id, &models).unwrap();
+    let value: serde_norway::Value = serde_norway::from_str(&again).unwrap();
+    assert_eq!(value["agent-default-model"]["model"], serde_norway::Value::from(id));
+
+    let fresh = build_deepseek_harness_settings(None, "http://127.0.0.1:8317/v1", id, &models).unwrap();
+    let value: serde_norway::Value = serde_norway::from_str(&fresh).unwrap();
+    assert_eq!(
+        value["llm-pi-ai"]["providers"][DEEPSEEK_HARNESS_PROVIDER_ID]["models"][0]["id"],
+        serde_norway::Value::from(id)
+    );
+}
+
