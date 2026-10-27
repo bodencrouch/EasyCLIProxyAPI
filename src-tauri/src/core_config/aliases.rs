@@ -3143,19 +3143,35 @@ pub(crate) fn render_updated_core_yaml(
     document: &mut yaml_serde_edit::YamlValue,
     updated: serde_norway::Value,
 ) -> Result<String, String> {
+    let source = document.get_string();
+    let original = document.get().clone();
     document.set(updated);
     let rendered = expand_top_level_flow_style_collections(&document.get_string(), document.get())?;
     let rendered = indent_indentationless_yaml_sequences(&rendered);
     let validated = serde_norway::from_str::<serde_norway::Value>(&rendered)
         .map_err(|error| format!("Failed to validate updated kernel configuration: {error}"))?;
-    if &validated != document.get() {
-        let path = first_yaml_mismatch_path(document.get(), &validated, &mut Vec::new())
-            .unwrap_or_else(|| "<unknown>".to_string());
-        return Err(format!(
-            "Updated kernel configuration does not match the expected value (path: {path}); write rejected"
-        ));
+    if &validated == document.get() {
+        return Ok(rendered);
     }
-    Ok(rendered)
+    // yaml_edit reads a plain scalar like `Model (Dec-2025) [Rerouted]` as a flow
+    // sequence, so yaml_serde_edit truncates it. The line editor writes JSON scalars.
+    if let Ok(fallback) = render_yaml_value_changes(&source, &original, document.get()) {
+        return Ok(fallback);
+    }
+    let has_comments = source.lines().any(|line| line.trim_start().starts_with('#'));
+    if !has_comments {
+        if let Ok(plain) = serde_norway::to_string(document.get()) {
+            let plain = indent_indentationless_yaml_sequences(&plain);
+            if serde_norway::from_str::<serde_norway::Value>(&plain).ok().as_ref() == Some(document.get()) {
+                return Ok(plain);
+            }
+        }
+    }
+    let path = first_yaml_mismatch_path(document.get(), &validated, &mut Vec::new())
+        .unwrap_or_else(|| "<unknown>".to_string());
+    Err(format!(
+        "Updated kernel configuration does not match the expected value (path: {path}); write rejected"
+    ))
 }
 
 pub(crate) fn expand_top_level_flow_style_collections(

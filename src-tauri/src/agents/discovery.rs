@@ -2097,7 +2097,7 @@ fn is_opencode_desktop_entry(path: &Path, content: &str) -> bool {
 }
 
 #[cfg(any(target_os = "linux", test))]
-fn linux_desktop_entry_command(content: &str) -> Option<String> {
+pub(crate) fn linux_desktop_entry_command(content: &str) -> Option<String> {
     let mut in_desktop_entry = false;
     for line in content.lines() {
         let line = line.trim();
@@ -2191,7 +2191,7 @@ fn tokenize_linux_desktop_exec(value: &str) -> Vec<String> {
 }
 
 #[cfg(any(target_os = "linux", test))]
-fn resolve_linux_desktop_command(
+pub(crate) fn resolve_linux_desktop_command(
     home: &Path,
     executable_directories: &[PathBuf],
     command: &str,
